@@ -1,6 +1,75 @@
 import streamlit as st
+import os
 from help import ask_chef
 # Import the chatbot function from your Gemini-based chef module
+
+
+def check_api_key():
+    """Check if API key is available from environment or user input"""
+    # First check environment variable
+    env_api_key = os.getenv("GEMINI_API_KEY")
+
+    # Check session state for user-provided API key
+    session_api_key = st.session_state.get("user_api_key", "")
+
+    return env_api_key or session_api_key
+
+
+def set_api_key_in_environment(api_key):
+    """Set the API key in environment for the current session"""
+    os.environ["GEMINI_API_KEY"] = api_key
+
+
+def api_key_input():
+    """Display API key input section"""
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("🔑 API Configuration")
+
+    # Check current API key status
+    current_api_key = check_api_key()
+
+    if current_api_key:
+        st.sidebar.success("✅ API key configured")
+        if st.sidebar.button("🔄 Change API Key"):
+            st.session_state.show_api_input = True
+            st.session_state.user_api_key = ""
+    else:
+        st.sidebar.error("❌ API key required")
+        st.session_state.show_api_input = True
+
+    # Show API key input if needed
+    if st.session_state.get("show_api_input", False):
+        with st.sidebar.form("api_key_form"):
+            st.write("Enter your Gemini API key:")
+            st.write(
+                "Get one at [Google AI Studio](https://makersuite.google.com/app/apikey)"
+            )
+
+            api_key_input = st.text_input(
+                "Gemini API Key",
+                type="password",
+                placeholder="Enter your API key here...",
+            )
+
+            col1, col2 = st.columns(2)
+            with col1:
+                save_key = st.form_submit_button("💾 Save Key")
+            with col2:
+                cancel = st.form_submit_button("❌ Cancel")
+
+            if save_key and api_key_input.strip():
+                st.session_state.user_api_key = api_key_input.strip()
+                set_api_key_in_environment(api_key_input.strip())
+                st.session_state.show_api_input = False
+                st.rerun()
+            elif save_key:
+                st.error("Please enter a valid API key")
+
+            if cancel:
+                st.session_state.show_api_input = False
+                st.rerun()
+
+    return check_api_key()
 
 
 def calculate_protein_needs(weight, age, gender, activity_level):
@@ -60,6 +129,23 @@ def main():
     st.set_page_config(page_title="Chef Maestro", page_icon="🍳", layout="wide")
     st.title("👨‍🍳 Chef Maestro: Your Culinary Tutor")
 
+    # Initialize session state
+    if "show_api_input" not in st.session_state:
+        st.session_state.show_api_input = False
+    if "user_api_key" not in st.session_state:
+        st.session_state.user_api_key = ""
+
+    # Check API key availability
+    api_key_available = api_key_input()
+
+    # Show main app only if API key is available
+    if not api_key_available:
+        st.warning("⚠️ Please configure your Gemini API key to use Chef Maestro.")
+        st.info(
+            "📝 You can get a free API key from [Google AI Studio](https://makersuite.google.com/app/apikey)"
+        )
+        return
+
     # Create tabs for different functionalities
     tab1, tab2 = st.tabs(["💬 Ask Chef Maestro", "🥗 Personalized Meal Prep"])
 
@@ -105,11 +191,13 @@ def main():
             if user_input.strip() == "":
                 st.warning("Please enter a question before submitting.")
             else:
-                with st.spinner("Chef Maestro is cooking up an answer..."):
-                    st.session_state.response = ask_chef(user_input)
-                    st.session_state.user_input = (
-                        user_input  # Store input in session state
-                    )
+                try:
+                    with st.spinner("Chef Maestro is cooking up an answer..."):
+                        st.session_state.response = ask_chef(user_input)
+                        st.session_state.user_input = user_input
+                except Exception as e:
+                    st.error(f"Error: {str(e)}")
+                    st.info("Please check your API key and try again.")
 
         if clear:
             # Clear the session state variables directly
@@ -191,9 +279,15 @@ def main():
             st.info(f"📊 Your calculated daily protein needs: **{protein_needs}g**")
 
             # Generate meal prep plan
-            with st.spinner("Chef Maestro is preparing your personalized meal plan..."):
-                meal_prep_prompt = get_meal_prep_prompt(user_profile, protein_needs)
-                st.session_state.meal_prep_response = ask_chef(meal_prep_prompt)
+            try:
+                with st.spinner(
+                    "Chef Maestro is preparing your personalized meal plan..."
+                ):
+                    meal_prep_prompt = get_meal_prep_prompt(user_profile, protein_needs)
+                    st.session_state.meal_prep_response = ask_chef(meal_prep_prompt)
+            except Exception as e:
+                st.error(f"Error generating meal plan: {str(e)}")
+                st.info("Please check your API key and try again.")
 
         # Display meal prep response
         if st.session_state.meal_prep_response:
@@ -203,7 +297,7 @@ def main():
     # Footer
     st.markdown("""
     ---
-    Built with desperation by a broke college student 
+    Built with 💖 by Chef Maestro. 
     """)
 
 
